@@ -1,0 +1,6 @@
+numpy
+pandas
+pyarrow
+lightgbm
+# optional: compiled scoring kernel (about 10x faster on a full season)
+numba

@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+*.parquet
+*.csv
+!constants/*.csv
+.ruff_cache/
