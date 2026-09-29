@@ -1,0 +1,121 @@
+{
+ "description": "Plus scale for aggregated score_pitches.py values: plus = 100 + 15 * (unit rv100 - mean) / sd, unit rv100 = 100 * the unit's mean per-pitch value (runs per pitch, pitcher side)",
+ "plus": {
+  "mean": 100.0,
+  "sd": 15.0
+ },
+ "population": "all pitches scored by score_pitches.py, seasons [2026] (700,262)",
+ "weights": "pitches per unit",
+ "aggregations": {
+  "pitcher_season": {
+   "keys": [
+    "pitcher",
+    "season"
+   ],
+   "units": 827,
+   "pitches": 700262,
+   "median_pitches_per_unit": 608.0,
+   "columns": {
+    "stuff_rv": {
+     "mean": -0.14654762864817167,
+     "sd": 0.290817305877343
+    },
+    "stuff_rv_asused": {
+     "mean": -0.05824585388981861,
+     "sd": 0.2931539888818611
+    },
+    "pitching_rv": {
+     "mean": -0.18388408916165713,
+     "sd": 0.3602906362238707
+    },
+    "location_rv": {
+     "mean": -0.1256382352718385,
+     "sd": 0.3659195870712783
+    }
+   }
+  },
+  "pitcher_season_pitch_type": {
+   "keys": [
+    "pitcher",
+    "season",
+    "pt"
+   ],
+   "units": 3906,
+   "pitches": 700262,
+   "median_pitches_per_unit": 101.0,
+   "columns": {
+    "stuff_rv": {
+     "mean": -0.14654762864817164,
+     "sd": 0.471052549426503
+    },
+    "stuff_rv_asused": {
+     "mean": -0.05824585388981863,
+     "sd": 0.4368109278728666
+    },
+    "pitching_rv": {
+     "mean": -0.18388408916165713,
+     "sd": 0.5978082177165562
+    },
+    "location_rv": {
+     "mean": -0.1256382352718385,
+     "sd": 0.5484557229880624
+    }
+   }
+  },
+  "pitcher_game": {
+   "keys": [
+    "pitcher",
+    "game_pk"
+   ],
+   "units": 20428,
+   "pitches": 700262,
+   "median_pitches_per_unit": 20.0,
+   "columns": {
+    "stuff_rv": {
+     "mean": -0.14654762864817164,
+     "sd": 0.3529034359526254
+    },
+    "stuff_rv_asused": {
+     "mean": -0.058245853889818615,
+     "sd": 0.35791123068184855
+    },
+    "pitching_rv": {
+     "mean": -0.18388408916165713,
+     "sd": 0.8595825073144113
+    },
+    "location_rv": {
+     "mean": -0.1256382352718385,
+     "sd": 0.8497616336200252
+    }
+   }
+  },
+  "pitcher_game_pitch_type": {
+   "keys": [
+    "pitcher",
+    "game_pk",
+    "pt"
+   ],
+   "units": 78152,
+   "pitches": 700262,
+   "median_pitches_per_unit": 6.0,
+   "columns": {
+    "stuff_rv": {
+     "mean": -0.1465476286481716,
+     "sd": 0.5403296418049858
+    },
+    "stuff_rv_asused": {
+     "mean": -0.058245853889818615,
+     "sd": 0.5303891183377917
+    },
+    "pitching_rv": {
+     "mean": -0.18388408916165713,
+     "sd": 1.5437576327500084
+    },
+    "location_rv": {
+     "mean": -0.1256382352718385,
+     "sd": 1.510620537137399
+    }
+   }
+  }
+ }
+}

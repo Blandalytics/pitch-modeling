@@ -92,22 +92,30 @@ Average a value over a unit's pitches, convert it to rv100, and scale it:
 plus = 100 + 15 × (rv100 − mean) / sd
 ```
 
-`constants/game_scale_2023_2026.json` has the mean and sd for two aggregations, each taken over
-every 2023–26 unit and weighted by pitches:
+`constants/plus_scale_constants.json` has the mean and sd (rv100) of each value for four
+aggregations. They are taken over every 2026 unit scored by this script and weighted by
+pitches:
 
-* `pitcher_game_pitch_type`
-* `pitcher_game`
+| aggregation | keys | 2026 units |
+|---|---|---|
+| `pitcher_season` | pitcher, season | 827 |
+| `pitcher_season_pitch_type` | pitcher, season, `pt` | 3,906 |
+| `pitcher_game` | pitcher, `game_pk` | 20,428 |
+| `pitcher_game_pitch_type` | pitcher, `game_pk`, `pt` | 78,152 |
 
-Each covers `stuff_rv`, `stuff_rv_asused`, `pitching_rv` and `location_rv`.
-`constants/plus_scale_2026.json` is the 2026 season pitcher × pitch type scale (`rv100` =
-Stuff, `rv100_pitching`, `rv100_location`, ...).
+Each covers `stuff_rv`, `stuff_rv_asused`, `pitching_rv` and `location_rv`. Smaller units
+have wider SDs, because more of their spread is noise, so use the constants for the
+aggregation you computed.
+
+`constants/game_scale_2023_2026.json` holds the same two game-level scales computed over
+2023–26 instead of 2026 only.
 
 ```python
 import json
 import pandas as pd
 
 v = pd.read_csv("values.csv")
-scale = json.load(open("constants/game_scale_2023_2026.json"))
+scale = json.load(open("constants/plus_scale_constants.json"))
 c = scale["aggregations"]["pitcher_game"]["columns"]
 g = v.groupby(["pitcher", "game_pk"])[["stuff_rv", "pitching_rv", "location_rv"]].mean() * 100
 for col, name in (("stuff_rv", "Stuff+"), ("pitching_rv", "Pitching+"), ("location_rv", "Location+")):
@@ -144,7 +152,8 @@ batted-ball results) are valued with linear weights.
 | `constants/count_mix.json` | league share of each pre-pitch count |
 | `constants/run_values.csv` | count-neutral run value of each outcome |
 | `constants/run_values_by_count.csv` | run value of each outcome in each count |
-| `constants/game_scale_2023_2026.json`, `constants/plus_scale_2026.json` | plus-scale constants |
+| `constants/plus_scale_constants.json` | plus-scale constants: pitcher season / season × pitch type / game / game × pitch type (2026) |
+| `constants/game_scale_2023_2026.json` | plus-scale constants: pitcher game / game × pitch type (2023–26) |
 
 On all 700,262 scored 2026 pitches, this script reproduces the reference pipeline's values
 to within 0.013 rv100 per pitcher × pitch type. The small differences come from the constant
