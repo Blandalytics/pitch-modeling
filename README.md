@@ -89,22 +89,19 @@ plus = 100 + 15 × (rv100 − mean) / sd
 ```
 
 `constants/plus_scale_constants.json` has the mean and sd (rv100) of each value for four
-aggregations. They are taken over every 2026 unit scored by this script and weighted by
-pitches:
+aggregations. They are pooled over every 2023–26 unit scored by this script (2.8M pitches) and
+weighted by pitches. 2023–25 are the models' training seasons.
 
-| aggregation | keys | 2026 units |
+| aggregation | keys | 2023–26 units |
 |---|---|---|
-| `pitcher_season` | pitcher, season | 827 |
-| `pitcher_season_pitch_type` | pitcher, season, `pt` | 3,906 |
-| `pitcher_game` | pitcher, `game_pk` | 20,428 |
-| `pitcher_game_pitch_type` | pitcher, `game_pk`, `pt` | 78,152 |
+| `pitcher_season` | pitcher, season | 3,278 |
+| `pitcher_season_pitch_type` | pitcher, season, `pt` | 15,068 |
+| `pitcher_game` | pitcher, `game_pk` | 82,158 |
+| `pitcher_game_pitch_type` | pitcher, `game_pk`, `pt` | 297,065 |
 
 Each covers `stuff_rv`, `stuff_rv_asused`, `pitching_rv` and `location_rv`. Smaller units
 have wider SDs, because more of their spread is noise, so use the constants for the
 aggregation you computed.
-
-`constants/game_scale_2023_2026.json` holds the same two game-level scales computed over
-2023–26 instead of 2026 only.
 
 ```python
 import json
@@ -148,8 +145,7 @@ batted-ball results) are valued with linear weights.
 | `constants/count_mix.json` | league share of each pre-pitch count |
 | `constants/run_values.csv` | count-neutral run value of each outcome |
 | `constants/run_values_by_count.csv` | run value of each outcome in each count |
-| `constants/plus_scale_constants.json` | plus-scale constants: pitcher season / season × pitch type / game / game × pitch type (2026) |
-| `constants/game_scale_2023_2026.json` | plus-scale constants: pitcher game / game × pitch type (2023–26) |
+| `constants/plus_scale_constants.json` | plus-scale constants: pitcher season / season × pitch type / game / game × pitch type (2023–26) |
 
 On all 700,262 scored 2026 pitches, this script reproduces the reference pipeline's values
 to within 0.013 rv100 per pitcher × pitch type. The small differences come from the constant
