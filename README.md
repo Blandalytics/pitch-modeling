@@ -59,16 +59,12 @@ Notes:
   reports it). The pre-pitch count is rebuilt from the previous pitch of the plate
   appearance, so pass every pitch of each plate appearance. Use `--count pre` if the file
   already has pre-pitch counts.
-* **`release_pos_y` is not used.** The release point is projected back from the fit plane,
-  which is taken as the constant y = 50.0 ft. Across 2023–26 the reported value was always
-  50.000–50.0075 ft, and the constant moves the release point by at most 0.001 ft.
 * **Whole outings.** Each pitch's differences from the pitcher's primary fastball (velocity,
   movement) come from the pitches passed in, so pass whole outings or seasons.
 * **What gets scored.** With `call_code`, only swing/take decisions are scored, as in
   training: no pitchouts, bunts, or automatic or intentional balls. Pitch types outside the
   Fastball (FF, SI, primary FC), Breaking (SL, ST, SV, CU, KC, secondary FC) and Offspeed (CH,
   FS, FO) groups are dropped.
-* **Seasons.** Seasons after 2025 are scored as 2025.
 
 ## Output
 
