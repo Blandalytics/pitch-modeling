@@ -23,6 +23,7 @@ Input: statfast-format pitches (.parquet or .csv), one row per pitch:
               game_date (or season), game_pk, at_bat_index, pitch_number
     optional  call_code, event_desc, events   swing/take filter and observed_rv
               home_team                       park elevation for spin efficiency
+              hb, ivb, release_pos_y          statsapi movement for the pitch groups
               pitcher_name, batter
 
 release_pos_y is not used: statfast's release_pos_x/z are the 9-parameter fit at the y = 50 ft
@@ -32,9 +33,20 @@ plane, which this script takes as the constant 50.0 when propagating back to the
 balls / strikes are statsapi's count *after* the pitch (statfast); the count the pitch was
 thrown in is rebuilt from the previous pitch of the plate appearance (--count pre if the file
 already has pre-pitch counts). With call_code, only swing/take decisions are scored, as in
-training (no pitchouts, bunts, automatic or intentional balls). Pitch types outside the
-Fastball / Breaking / Offspeed groups are dropped. The primary fastball and the arsenal
-deltas come from the pitches passed in, so pass whole outings.
+training (no pitchouts, bunts, automatic or intentional balls). Pitch groups come from
+pitch_groups.py: the Level 1 classifier (pitch_l1.py, arm-adjusted field only) per
+pitcher-game-pitch type, else the Statcast pitch type (without hb/ivb, pitch type only).
+Pitches outside the Fastball / Breaking / Offspeed groups are dropped. The primary fastball,
+the arsenal deltas and the groups come from the pitches passed in, so pass whole outings.
+
+2026 (abs_2026.py, abs_2026.json in the constants): 2026 rows are scored with each batter's
+pose-convention reference zone instead of statfast's fixed ABS zone (unless the input already
+carries sz_top_abs / sz_bot_abs, i.e. was swapped upstream). Their location-aware swing,
+called-strike and whiff stages are recalibrated to 2026's calls and swings, and the as-used
+stages get the matching league-wide shift per count. Pitching, Stuff as used and Location
+change; count-neutral Stuff does not. --no-abs scores 2026 as-is. In-process callers pass
+``env=abs_2026.load(...)`` to score(); the default (None) applies none of it, which is right
+for any level but MLB.
 
     python score_pitches.py pitches.parquet --out values.csv [--parts] [--probs]
 """
@@ -51,6 +63,9 @@ from pathlib import Path
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
+
+import abs_2026
+import pitch_groups
 
 HERE = Path(__file__).resolve().parent
 
@@ -87,11 +102,6 @@ OBSERVED = {"B": "ball", "*B": "ball", "H": "ball", "C": "called_strike", "S": "
 HITS = {"single": "single", "double": "double", "triple": "triple", "home_run": "home_run"}
 
 # ---- stuff features (mirror dml_stuff_swing.py) ---------------------------------------------
-PITCH_GROUPS = {
-    "Fastball": frozenset(["FF", "SI"]),
-    "Breaking": frozenset(["SL", "SV", "ST", "KC", "CU"]),
-    "Offspeed": frozenset(["CH", "FS", "FO"]),
-}
 FB_CANDIDATES = frozenset(["FF", "SI", "FC"])
 MATCHUPS = {1: "Same Hand", 0: "Opposite Hand"}  # platoon flag -> model name suffix
 STUFF_NUM = ["velo", "ax_m", "az", "rel_x_m", "rel_z", "extension", "spin_rate", "spin_eff",
@@ -194,16 +204,10 @@ def arsenal(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def pitch_group(pt: pd.Series, is_primary: pd.Series) -> pd.Series:
-    """pitch_group: Fastball / Breaking / Offspeed, cutters by role, everything else Other."""
-    out = pd.Series("Other", index=pt.index, dtype="string")
-    for name, types in PITCH_GROUPS.items():
-        out[pt.isin(types).to_numpy(bool)] = name
-    cutter = (pt == "FC").fillna(False).to_numpy(bool)
-    primary = is_primary.to_numpy(bool)
-    out[cutter & primary] = "Fastball"
-    out[cutter & ~primary] = "Breaking"
-    return out
+def pitch_group(df: pd.DataFrame) -> pd.Series:
+    """pitch_group: pitch_groups.assign, the Level 1 family of the pitcher-game-pitch type
+    (pitch_l1.py, arm-adjusted field), else the Statcast pitch type; run on whole outings."""
+    return pitch_groups.assign(df)
 
 
 def _pre_pitch_count(df: pd.DataFrame) -> pd.DataFrame:
@@ -228,6 +232,7 @@ def features(raw: pd.DataFrame, count: str = "post") -> pd.DataFrame:
     df = raw.reset_index(drop=True).assign(input_row=lambda d: np.arange(len(d)))
     if count == "post":
         df = _pre_pitch_count(df)
+    df["group"] = pitch_group(df)  # Level 1 works on whole outings: before any filter
     ok = df[[*STUFF_COLS, *LOCATION_COLS]].notna().all(axis=1)
     ok &= (df["balls"] <= 3) & (df["strikes"] <= 2) & (df["sz_top"] > df["sz_bot"])
     ok &= df["p_throws"].isin(["L", "R"]) & df["stand"].isin(["L", "R"])
@@ -241,7 +246,6 @@ def features(raw: pd.DataFrame, count: str = "post") -> pd.DataFrame:
         df["home_team"] = pd.NA
     df = arsenal(physics(df))
     df = df[np.isfinite(df["spin_eff"])].reset_index(drop=True)
-    df["group"] = pitch_group(df["pt"], df["is_primary"].astype(bool))
     if "call_code" in df:  # SWING_TAKE.label: swing/take decisions only, bunts dropped
         code = df["call_code"].astype("string")
         keep = code.isin(list(DECISIONS)).fillna(False).to_numpy(bool)
@@ -398,14 +402,20 @@ def _draws(gm: dict, cell: tuple) -> np.ndarray:
     raise KeyError(f"no location draws for {cell}")
 
 
-def _neutral(model: dict, gm: dict, t: np.ndarray, cells: dict, kernel) -> np.ndarray:
+def _neutral(model: dict, gm: dict, t: np.ndarray, cells: dict, kernel, delta=None) -> np.ndarray:
     """neutral_probs: class probabilities for stuff log-odds t, averaged over each cell's
-    league location draws. ``cells`` maps (season, balls, strikes, p_throws, stand) to rows."""
+    league location draws. ``cells`` maps (season, balls, strikes, p_throws, stand) to rows; a
+    sixth key element True marks rows of the abs_2026 season, whose first-stage league shift gets
+    delta[count] (combine.abs_asused)."""
     out = np.full((len(t), t.shape[1] + 1), np.nan)
     fn, chunk = kernel
-    shift = np.asarray(model["shift"], np.float64)
+    base = np.asarray(model["shift"], np.float64)
     for cell, idx in cells.items():
-        Gd = _draws(gm, cell)
+        Gd = _draws(gm, cell[:5])
+        shift = base
+        if delta is not None and len(cell) > 5 and cell[5]:
+            shift = base.copy()
+            shift[0] += delta[cell[1] * 3 + cell[2]]
         for start in range(0, len(idx), chunk or len(idx)):
             rows = idx[start : start + (chunk or len(idx))]
             out[rows] = fn(np.ascontiguousarray(t[rows]), Gd, shift)
@@ -497,9 +507,15 @@ def load_constants(constants_dir: Path) -> tuple[np.ndarray, pd.Series, pd.DataF
     return mix, values.reindex(list(OUTCOMES)), by_count.reindex(list(OUTCOMES))
 
 
-def score(raw: pd.DataFrame, models: list[dict], mix, values, by_count, count="post", **par):
+def score(raw: pd.DataFrame, models: list[dict], mix, values, by_count, count="post", env=None,
+          **par):  # fmt: skip
     """Per pitch: the nine outcome probabilities of each kind (count-neutral Stuff, Stuff at the
-    actual count, Pitching) and the run values. Returns (pitches, rows dropped as Other)."""
+    actual count, Pitching) and the run values. Returns (pitches, rows dropped as Other). With
+    ``env`` (abs_2026.load), its season's rows get the reference zone, the recalibrated swing,
+    called-strike and whiff stages (Pitching) and the matching as-used shifts (Stuff as used;
+    count-neutral Stuff is unchanged)."""
+    if env:
+        raw = abs_2026.apply_zone(raw, env)
     df = features(raw, count)
     modeled = df["model"].isin(set.intersection(*(set(m["groups"]) for m in models)))
     dropped = int((~modeled).sum())
@@ -511,19 +527,22 @@ def score(raw: pd.DataFrame, models: list[dict], mix, values, by_count, count="p
         gms = [m["groups"][name] for m in models]
         D = [_stuff_index(gm, sub) for gm in gms]
         D_by_group[name] = D
-        c = _count(sub)
+        c, in_env = _count(sub), sub["season"].to_numpy() == (env or {}).get("season")
         keys = pd.DataFrame({"season": _season(gms[0], sub), "balls": sub["balls"].to_numpy(),
                              "strikes": sub["strikes"].to_numpy(),
                              "p_throws": sub["p_throws"].to_numpy(),
-                             "stand": sub["stand"].to_numpy()})  # fmt: skip
-        cells = {(int(k[0]), int(k[1]), int(k[2]), str(k[3]), str(k[4])): idx
+                             "stand": sub["stand"].to_numpy(),
+                             "env": in_env})  # fmt: skip
+        cells = {(int(k[0]), int(k[1]), int(k[2]), str(k[3]), str(k[4]), bool(k[5])): idx
                  for k, idx in keys.groupby(list(keys.columns)).indices.items()}  # fmt: skip
-        used = []
-        for model, gm, d in zip(models, gms, D, strict=True):
+        used, probs = [], []
+        for stage, model, gm, d in zip(MODEL_FILES, models, gms, D, strict=True):
             t = np.column_stack([th[c] * d[:, s] for s, th in enumerate(gm["thetas"])])
-            used.append(_neutral(model, gm, t, cells, kernel))
+            delta = abs_2026.asused_delta(stage, env)
+            used.append(_neutral(model, gm, t, cells, kernel, delta))
+            probs.append(abs_2026.adjust(stage, _full_probs(gm, sub, d), sub, env))
         asused[rows] = _chain(*used)
-        full[rows] = _chain(*(_full_probs(gm, sub, d) for gm, d in zip(gms, D, strict=True)))
+        full[rows] = _chain(*probs)
     neutral = count_neutral(models, df, D_by_group, mix, par.get("workers"), par.get("kernel"))
     at_count = by_count.to_numpy()[:, _count(df)].T  # pitches x outcomes
     parts = {"stuff_rv": -(neutral * values.to_numpy()), "stuff_rv_asused": -(asused * at_count),
@@ -564,6 +583,8 @@ def main() -> None:
     ap.add_argument("--constants", type=Path, default=_default_dir("constants"))
     ap.add_argument("--workers", type=int, help="processes (default: 1 with numba, else cores)")
     ap.add_argument("--kernel", choices=sorted(KERNELS), default=DEFAULT_KERNEL)
+    ap.add_argument("--no-abs", action="store_true",
+                    help="score 2026 as-is (statfast's ABS zone, no 2026 recalibration)")
     a = ap.parse_args()
     raw = pd.read_parquet(a.data) if a.data.endswith(".parquet") else pd.read_csv(a.data)
     if a.pitcher:
@@ -571,7 +592,8 @@ def main() -> None:
         raw = raw[names.isin(a.pitcher) | raw["pitcher"].astype(str).isin(a.pitcher)]
     models = load_models(a.models)
     mix, values, by_count = load_constants(a.constants)
-    pitches, dropped = score(raw, models, mix, values, by_count, a.count,
+    env = None if a.no_abs else abs_2026.load(a.constants / abs_2026.FILE)
+    pitches, dropped = score(raw, models, mix, values, by_count, a.count, env,
                              workers=a.workers, kernel=a.kernel)  # fmt: skip
     cols = [c for c in ID_COLS if c in pitches] + VALUES
     cols += ["observed_rv"] if "observed_rv" in pitches else []

@@ -9,7 +9,8 @@ double/debiased machine learning (DML) pitch models trained on 2023–25 Statcas
 * **Location**: the difference between the two, i.e. what the location added to (or took away
   from) the stuff.
 
-Everything runs from one standalone script, `score_pitches.py` (numpy, pandas, lightgbm).
+Everything runs from `score_pitches.py` (numpy, pandas, lightgbm), with the pitch groups from
+`pitch_groups.py` and the Level 1 pitch classifier `pitch_l1.py`.
 
 ## Install
 
@@ -36,6 +37,7 @@ python score_pitches.py pitches.parquet --pitcher "Nolan McLean" --parts --out m
 | `--count pre` | the input's `balls`/`strikes` are already the pre-pitch count |
 | `--models`, `--constants` | alternative model / constant directories |
 | `--kernel`, `--workers` | `numba` or `numpy` scoring kernel, and processes for the numpy kernel |
+| `--no-abs` | score 2026 as-is: statfast's fixed ABS zone, no 2026 recalibration (see below) |
 
 ## Input
 
@@ -52,6 +54,7 @@ file.
 | optional | `call_code`, `event_desc`, `events`: swing/take filter and `observed_rv` |
 | | `home_team`: park elevation for spin efficiency (default 517 ft, the league average) |
 | | `pitcher_name`, `batter` |
+| | `hb`, `ivb` (statsapi break, inches), `release_pos_y`: the Level 1 pitch groups; without `hb`/`ivb` every pitch is grouped by its pitch type |
 
 Notes:
 
@@ -62,9 +65,23 @@ Notes:
 * **Whole outings.** Each pitch's differences from the pitcher's primary fastball (velocity,
   movement) come from the pitches passed in, so pass whole outings or seasons.
 * **What gets scored.** With `call_code`, only swing/take decisions are scored, as in
-  training: no pitchouts, bunts, or automatic or intentional balls. Pitch types outside the
-  Fastball (FF, SI, primary FC), Breaking (SL, ST, SV, CU, KC, secondary FC) and Offspeed (CH,
-  FS, FO) groups are dropped.
+  training: no pitchouts, bunts, or automatic or intentional balls. Pitches outside the
+  Fastball, Breaking and Offspeed groups are dropped.
+* **Pitch groups.** Each pitcher-game-pitch type takes its Level 1 family from `pitch_l1.py`
+  (Fastball / Breaking Ball / Offspeed), using the arm-adjusted movement field only: movement
+  rotated by the pitcher's estimated arm angle, plus velocity relative to his hardest pitches
+  that game. Types the classifier leaves Unassigned (no `hb`/`ivb`, or outside its field) go
+  by pitch type: Fastball FF, SI; Breaking SL, FC, SV, ST, KC, CU, CS; Offspeed CH, FS, FO;
+  anything else is dropped. The arm-angle estimate uses pitcher height, which `pitch_l1.py`
+  looks up from the MLB Stats API for pitchers not in its 2023–26 cache.
+* **2026 (ABS).** statfast's 2026 `sz_top`/`sz_bot` are the fixed ABS zone, about 0.2 ft
+  shorter than the pose-tracked zones the models were trained on, and ABS challenges changed
+  how the zone is called. So 2026 MLB pitches are scored with each batter's pose-convention
+  reference zone (`constants/abs_2026.json`; the ABS zone is kept as `sz_top_abs`/`sz_bot_abs`),
+  and the location-aware swing, called-strike and whiff stages are recalibrated to 2026's
+  swings and calls, with the matching league-wide shift on Stuff as used (`abs_2026.py`).
+  Pitching, Stuff as used and Location change; count-neutral Stuff does not. `--no-abs` turns
+  it off; in-process callers of `score()` pass `env=abs_2026.load("constants/abs_2026.json")`.
 
 ## Output
 
@@ -89,15 +106,17 @@ plus = 100 + 15 × (rv100 − mean) / sd
 ```
 
 `constants/plus_scale_constants.json` has the mean and sd (rv100) of each value for four
-aggregations. They are pooled over every 2023–26 unit scored by this script (2.8M pitches) and
-weighted by pitches. 2023–25 are the models' training seasons.
+aggregations. They are pooled over every 2020–26 unit scored by this script (4.5M pitches;
+2026 with the ABS adjustment), weighted by pitches times a light recency weight,
+0.9^(2026 − season): 1 for 2026, 0.53 for 2020. 2023–25 are the models' training seasons;
+2020–22 are scored as 2023.
 
-| aggregation | keys | 2023–26 units |
+| aggregation | keys | 2020–26 units |
 |---|---|---|
-| `pitcher_season` | pitcher, season | 3,278 |
-| `pitcher_season_pitch_type` | pitcher, season, `pt` | 15,068 |
-| `pitcher_game` | pitcher, `game_pk` | 82,158 |
-| `pitcher_game_pitch_type` | pitcher, `game_pk`, `pt` | 297,065 |
+| `pitcher_season` | pitcher, season | 5,968 |
+| `pitcher_season_pitch_type` | pitcher, season, `pt` | 25,773 |
+| `pitcher_game` | pitcher, `game_pk` | 132,838 |
+| `pitcher_game_pitch_type` | pitcher, `game_pk`, `pt` | 462,901 |
 
 Each covers `stuff_rv`, `stuff_rv_asused`, `pitching_rv` and `location_rv`. Smaller units
 have wider SDs, because more of their spread is noise, so use the constants for the
@@ -141,12 +160,14 @@ batted-ball results) are valued with linear weights.
 | path | contents |
 |---|---|
 | `score_pitches.py` | the scorer |
+| `pitch_groups.py`, `pitch_l1.py` | pitch groups: the Level 1 classifier, then the pitch-type fallback |
+| `models/pitch_l1_v1.npz` | the frozen Level 1 classifier (movement fields, arm-angle estimator, height cache) |
 | `models/*_logit_2325.pkl` | the four fitted models (plain dicts of LightGBM model strings and numpy arrays) |
 | `constants/count_mix.json` | league share of each pre-pitch count |
 | `constants/run_values.csv` | count-neutral run value of each outcome |
 | `constants/run_values_by_count.csv` | run value of each outcome in each count |
-| `constants/plus_scale_constants.json` | plus-scale constants: pitcher season / season × pitch type / game / game × pitch type (2023–26) |
+| `constants/plus_scale_constants.json` | plus-scale constants: pitcher season / season × pitch type / game / game × pitch type (2020–26) |
+| `abs_2026.py`, `constants/abs_2026.json` | the 2026 ABS adjustment: reference zones and recalibrated stages |
 
-On all 700,262 scored 2026 pitches, this script reproduces the reference pipeline's values
-to within 0.013 rv100 per pitcher × pitch type. The small differences come from the constant
-fit plane.
+On all 702,163 scored 2026 pitches, this script reproduces the reference pipeline's values
+exactly (every pitch, every value, and the same pitch groups).
