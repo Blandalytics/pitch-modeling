@@ -1,7 +1,7 @@
 # pitch-modeling
 
 Per-pitch **Stuff**, **Pitching** and **Location** run values for MLB pitches, from a set of
-double/debiased machine learning (DML) pitch models trained on 2023–25 Statcast data.
+double/debiased machine learning (DML) pitch models trained on 2023–26 Statcast data.
 
 * **Stuff**: what the pitch's physical characteristics are worth, independent of where it
   was thrown and in what count.
@@ -108,15 +108,15 @@ plus = 100 + 15 × (rv100 − mean) / sd
 `constants/plus_scale_constants.json` has the mean and sd (rv100) of each value for four
 aggregations. They are pooled over every 2020–26 unit scored by this script (4.5M pitches;
 2026 with the ABS adjustment), weighted by pitches times a light recency weight,
-0.9^(2026 − season): 1 for 2026, 0.53 for 2020. 2023–25 are the models' training seasons;
+0.9^(2026 − season): 1 for 2026, 0.53 for 2020. 2023–26 are the models' training seasons;
 2020–22 are scored as 2023.
 
 | aggregation | keys | 2020–26 units |
 |---|---|---|
-| `pitcher_season` | pitcher, season | 5,968 |
-| `pitcher_season_pitch_type` | pitcher, season, `pt` | 25,773 |
-| `pitcher_game` | pitcher, `game_pk` | 132,838 |
-| `pitcher_game_pitch_type` | pitcher, `game_pk`, `pt` | 462,901 |
+| `pitcher_season` | pitcher, season | 5,969 |
+| `pitcher_season_pitch_type` | pitcher, season, `pt` | 25,781 |
+| `pitcher_game` | pitcher, `game_pk` | 133,068 |
+| `pitcher_game_pitch_type` | pitcher, `game_pk`, `pt` | 463,807 |
 
 Each covers `stuff_rv`, `stuff_rv_asused`, `pitching_rv` and `location_rv`. Smaller units
 have wider SDs, because more of their spread is noise, so use the constants for the
@@ -162,12 +162,12 @@ batted-ball results) are valued with linear weights.
 | `score_pitches.py` | the scorer |
 | `pitch_groups.py`, `pitch_l1.py` | pitch groups: the Level 1 classifier, then the pitch-type fallback |
 | `models/pitch_l1_v1.npz` | the frozen Level 1 classifier (movement fields, arm-angle estimator, height cache) |
-| `models/*_logit_2325.pkl` | the four fitted models (plain dicts of LightGBM model strings and numpy arrays) |
+| `models/*_logit_2326.pkl` | the four fitted models (plain dicts of LightGBM model strings and numpy arrays) |
 | `constants/count_mix.json` | league share of each pre-pitch count |
 | `constants/run_values.csv` | count-neutral run value of each outcome |
 | `constants/run_values_by_count.csv` | run value of each outcome in each count |
 | `constants/plus_scale_constants.json` | plus-scale constants: pitcher season / season × pitch type / game / game × pitch type (2020–26) |
 | `abs_2026.py`, `constants/abs_2026.json` | the 2026 ABS adjustment: reference zones and recalibrated stages |
 
-On all 702,163 scored 2026 pitches, this script reproduces the reference pipeline's values
+On all 709,099 scored 2026 pitches, this script reproduces the reference pipeline's values
 exactly (every pitch, every value, and the same pitch groups).

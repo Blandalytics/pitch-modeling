@@ -76,10 +76,10 @@ def _default_dir(name: str) -> Path:
 
 
 MODEL_FILES = {  # chained in this order; the class order is checked on load
-    "swing_take": ("swing_take_logit_2325.pkl", ("swing", "take")),
-    "take_outcome": ("take_outcome_logit_2325.pkl", ("called_strike", "ball")),
-    "swing_outcome": ("swing_outcome_logit_2325.pkl", ("whiff", "foul", "in_play")),
-    "in_play": ("in_play_logit_2325.pkl", ("field_out", "single", "double", "triple", "home_run")),
+    "swing_take": ("swing_take_logit_2326.pkl", ("swing", "take")),
+    "take_outcome": ("take_outcome_logit_2326.pkl", ("called_strike", "ball")),
+    "swing_outcome": ("swing_outcome_logit_2326.pkl", ("whiff", "foul", "in_play")),
+    "in_play": ("in_play_logit_2326.pkl", ("field_out", "single", "double", "triple", "home_run")),
 }
 BATTED = MODEL_FILES["in_play"][1]
 OUTCOMES = ("ball", "called_strike", "swinging_strike", "foul", *BATTED)
